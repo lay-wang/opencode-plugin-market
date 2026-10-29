@@ -2,6 +2,8 @@
 
 A plugin market inside the OpenCode desktop app. Browse the [OpenDock](https://www.opendock.net/zh/plugins/) catalog, search it, filter it, and install or remove plugins without leaving the app.
 
+![Settings › Plugin Market](docs/settings.jpg)
+
 ## What it does
 
 - **Settings › Plugin Market** — a page listing 2,700+ OpenCode plugins.
