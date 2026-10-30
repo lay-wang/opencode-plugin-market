@@ -224,7 +224,19 @@ export default function MarketPage() {
     ))
 
   return (
-    <div>
+    <div style={{ "padding-top": "20px" }}>
+      <div style={{ display: "flex", "align-items": "baseline", gap: "6px", "font-size": "12px", opacity: 0.5, "margin-bottom": "16px" }}>
+        <span>{ctx.t("source")}</span>
+        <a
+          href="https://www.opendock.net/zh/plugins/"
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: "inherit", "text-decoration": "underline" }}
+        >
+          opendock.net
+        </a>
+        <span>· {ctx.t("catalog")} {at() ? new Date(at()).toLocaleString() : "-"}</span>
+      </div>
       <div style={{ display: "flex", gap: "8px", "align-items": "flex-end", "margin-bottom": "6px" }}>
         <div style={{ flex: 1 }}>
           <ctx.ui.TextInput
@@ -249,7 +261,7 @@ export default function MarketPage() {
 
       <div style={{ display: "flex", gap: "4px", "flex-wrap": "wrap", "align-items": "center", "font-size": "12px", opacity: 0.6, margin: "0 0 8px" }}>
         <span style={{ "margin-right": "6px" }}>
-          {total()} {ctx.t("pluginsUnit")} · {ctx.t("catalog")} {at() ? new Date(at()).toLocaleString() : "-"}
+          {total()} {ctx.t("pluginsUnit")}
         </span>
         <Show when={category()}>
           {(id) => <Chip label={categories().find((item) => item.id === id())?.label ?? id()} clear={() => setCategory(null)} />}
