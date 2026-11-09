@@ -277,6 +277,20 @@ export default function MarketPage() {
         </a>
         <span>· {ctx.t("catalog")} {at() ? new Date(at()).toLocaleString() : "-"}</span>
       </div>
+      <div style={{ display: "flex", gap: "6px", "align-items": "center", "font-size": "12px", opacity: 0.6, "margin-bottom": "12px" }}>
+        <span>{ctx.t("shortcut")}</span>
+        <For each={ctx.keybinds.keybind("plugin-market.open")} fallback={<span>—</span>}>
+          {(key) => (
+            <kbd style={{ "font-family": "inherit", padding: "0 4px", "border-radius": "3px", border: "1px solid color-mix(in srgb, currentColor 25%, transparent)" }}>
+              {key}
+            </kbd>
+          )}
+        </For>
+        <ctx.ui.Button size="small" variant="ghost" onClick={() => ctx.layout.settings("shortcuts")}>
+          {ctx.t("changeShortcut")}
+        </ctx.ui.Button>
+      </div>
+
       <div style={{ display: "flex", gap: "8px", "align-items": "flex-end", "margin-bottom": "6px" }}>
         <div style={{ flex: 1 }}>
           <ctx.ui.TextInput

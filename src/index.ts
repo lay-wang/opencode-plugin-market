@@ -209,12 +209,25 @@ async function runCli(args: string[]): Promise<void> {
       continue
     }
     const result = await new Promise<{ code: number; output: string }>((resolve) => {
-      const child = spawn(bin, args, { env: process.env })
+      // The market compares versions on npmjs, so the CLI must install from the same registry. The user's own
+      // registry may be a mirror that lags or, as seen here, answers 500 for a scoped package.
+      const child = spawn(bin, args, { env: { ...process.env, npm_config_registry: "https://registry.npmjs.org" } })
       let output = ""
+      // Without this the app would spin forever when the registry stops answering.
+      const timer = setTimeout(() => {
+        child.kill()
+        resolve({ code: 1, output: `${output}\n命令超过 120 秒没有完成，已放弃` })
+      }, 120_000)
       child.stdout.on("data", (chunk) => (output += chunk))
       child.stderr.on("data", (chunk) => (output += chunk))
-      child.on("error", (error) => resolve({ code: 1, output: String(error) }))
-      child.on("close", (code) => resolve({ code: code ?? 0, output }))
+      child.on("error", (error) => {
+        clearTimeout(timer)
+        resolve({ code: 1, output: String(error) })
+      })
+      child.on("close", (code) => {
+        clearTimeout(timer)
+        resolve({ code: code ?? 0, output })
+      })
     })
     if (result.code === 0) return
     failure = result.output.trim() || `退出码 ${result.code}`
@@ -356,11 +369,19 @@ export default Plugin.define({
     const update = async (input: { name: string }) => {
       try {
         if (!/^(@[\w.-]+\/)?[\w.-]+$/.test(input.name)) throw new Error("包名不合法，已放弃更新")
-        await runCli(["plugin", "add", `${input.name}@latest`])
+        const spec = (await specs()).find(
+          (candidate) => !candidate.startsWith("-") && (bareSpec(candidate) === input.name || bareSpec(candidate).endsWith(input.name)),
+        )
+        if (!spec) throw new Error("配置里没有这个插件")
+        const before = (find(await list(), spec)?.source.version as string | undefined) ?? null
+        // `plugin add` on a package that is already configured does nothing; `plugin update` is the one that moves it.
+        await runCli(["plugin", "update", spec])
         await settle(input.name, true, 90_000)
         const loaded = find(await list(), input.name)
         if (!loaded) return { ok: false, error: "更新完成，但服务端没有加载它（可能需要重启）" }
         if (loaded.state.status !== "active") return { ok: false, error: `已更新，但加载失败：${loaded.state.error ?? "未知原因"}` }
+        const after = (loaded.source.version as string | undefined) ?? null
+        if (before && after && before === after) return { ok: false, error: `版本仍是 ${after}，更新没有生效` }
         return { ok: true, error: null }
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) }

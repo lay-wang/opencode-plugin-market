@@ -1,4 +1,4 @@
-import { Command, Plugin, SettingsPage, usePlugin } from "@opencode/plugin/gui"
+import { Command, Panel, Plugin, usePlugin } from "@opencode/plugin/gui"
 import MarketPage from "./market"
 
 export default Plugin.define({
@@ -45,6 +45,9 @@ export default Plugin.define({
       updatesN: "{n} updates available",
       upToDate: "up to date",
       openPage: "Open on OpenDock",
+      shortcut: "Shortcut",
+      changeShortcut: "Change",
+      shortcutHint: "The shortcut is a host setting; this opens Settings › Shortcuts with the command listed.",
     },
     zh: {
       title: "插件市场",
@@ -87,16 +90,21 @@ export default Plugin.define({
       updatesN: "{n} 个插件可更新",
       upToDate: "已是最新",
       openPage: "在 OpenDock 打开",
+      shortcut: "快捷键",
+      changeShortcut: "修改",
+      shortcutHint: "快捷键由宿主管理，这里直接跳到设置里的快捷键页面。",
     },
   },
   setup(ctx) {
-    ctx.add(SettingsPage, {
-      id: "plugin-market",
-      title: ctx.t("title"),
-      icon: "extensions",
-      // Sits at the bottom of Settings, in the group with About.
-      group: "about",
-      entries: [{ id: "plugin-market", title: ctx.t("title"), description: ctx.t("searchHint") }],
+    // A tab in the session's side region: the market is a place you work in, not a settings page.
+    ctx.add(Panel, {
+      id: "market",
+      region: "side",
+      wide: true,
+      list: (input) =>
+        input.open.includes("market")
+          ? [{ id: "market", title: ctx.t("title"), closable: "hover" as const, fallback: true }]
+          : [],
       render: () => <MarketPage />,
     })
     // A shortcut of the user's choosing: Settings › Shortcuts lists it, and ⌘K finds it.
@@ -109,7 +117,10 @@ export default Plugin.define({
       keywords: "market plugin 市场 插件 安装 install",
       section: "navigation",
       bind: "mod+shift+m",
-      run: () => ctx.layout.settings("plugin-market"),
+      run: () => {
+        const session = ctx.sessions.current()
+        if (session) ctx.layout.toggle("plugin-market:market", session)
+      },
     })
   },
 })
