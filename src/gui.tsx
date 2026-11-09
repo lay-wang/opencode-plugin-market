@@ -1,4 +1,4 @@
-import { Command, Panel, Plugin, usePlugin } from "@opencode/plugin/gui"
+import { Command, Plugin, SettingsPage, usePlugin } from "@opencode/plugin/gui"
 import MarketPage from "./market"
 
 export default Plugin.define({
@@ -96,18 +96,15 @@ export default Plugin.define({
     },
   },
   setup(ctx) {
-    // A tab in the session's side region: the market is a place you work in, not a settings page.
-    ctx.add(Panel, {
-      id: "market",
-      region: "side",
-      wide: true,
-      list: (input) =>
-        input.open.includes("market")
-          ? [{ id: "market", title: ctx.t("title"), closable: "hover" as const, fallback: true }]
-          : [],
+    ctx.add(SettingsPage, {
+      id: "plugin-market",
+      title: ctx.t("title"),
+      icon: "extensions",
+      // Bottom of the Settings nav, in the same group as About.
+      group: "about",
+      entries: [{ id: "plugin-market", title: ctx.t("title"), description: ctx.t("searchHint") }],
       render: () => <MarketPage />,
     })
-    // A shortcut of the user's choosing: Settings › Shortcuts lists it, and ⌘K finds it.
     ctx.add(Command, {
       id: "open",
       get title() {
@@ -117,10 +114,7 @@ export default Plugin.define({
       keywords: "market plugin 市场 插件 安装 install",
       section: "navigation",
       bind: "mod+shift+m",
-      run: () => {
-        const session = ctx.sessions.current()
-        if (session) ctx.layout.toggle("plugin-market:market", session)
-      },
+      run: () => ctx.layout.settings("plugin-market"),
     })
   },
 })
