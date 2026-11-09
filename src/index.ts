@@ -113,6 +113,30 @@ function pluginsOf(src: string): unknown[] {
 
 const bareSpec = (spec: string) => spec.replace(/@[^@/]*$/, "")
 
+/** A package that lives on disk, not on npm: there is no version to compare. */
+const localSpec = (spec: string) =>
+  spec.startsWith("/") || spec.startsWith(".") || spec.startsWith("~") || spec.startsWith("file:") || spec.startsWith("git")
+
+/* ---------- npm versions ---------- */
+
+const latestCache = new Map<string, { at: number; version: string | null }>()
+const LATEST_MS = 10 * 60 * 1000
+
+async function npmLatest(name: string): Promise<string | null> {
+  const hit = latestCache.get(name)
+  if (hit && Date.now() - hit.at < LATEST_MS) return hit.version
+  let version: string | null = null
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${name.replace("/", "%2F")}/latest`)
+    if (res.ok) {
+      const body = (await res.json()) as { version?: unknown }
+      if (typeof body.version === "string") version = body.version
+    }
+  } catch {}
+  latestCache.set(name, { at: Date.now(), version })
+  return version
+}
+
 /* ---------- catalog ---------- */
 
 async function readCatalog(): Promise<{ at: number; items: Entry[] }> {
@@ -314,6 +338,35 @@ export default Plugin.define({
       }
     }
 
-    await ctx.rpc.register(Market, { market, install, uninstall })
+    /** Installed npm plugins with the version this server runs and the version npm publishes. */
+    const updates = async () => {
+      const specsInstalled = (await specs()).filter((spec) => !spec.startsWith("-"))
+      const runtime = await list()
+      const items: Array<{ name: string; current: string | null; latest: string | null }> = []
+      for (const spec of specsInstalled) {
+        const name = bareSpec(spec)
+        if (!name || localSpec(name)) continue
+        const loaded = find(runtime, spec)
+        const current = (loaded?.source.version as string | undefined) ?? null
+        items.push({ name, current, latest: await npmLatest(name) })
+      }
+      return { items }
+    }
+
+    const update = async (input: { name: string }) => {
+      try {
+        if (!/^(@[\w.-]+\/)?[\w.-]+$/.test(input.name)) throw new Error("包名不合法，已放弃更新")
+        await runCli(["plugin", "add", `${input.name}@latest`])
+        await settle(input.name, true, 90_000)
+        const loaded = find(await list(), input.name)
+        if (!loaded) return { ok: false, error: "更新完成，但服务端没有加载它（可能需要重启）" }
+        if (loaded.state.status !== "active") return { ok: false, error: `已更新，但加载失败：${loaded.state.error ?? "未知原因"}` }
+        return { ok: true, error: null }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    }
+
+    await ctx.rpc.register(Market, { market, install, uninstall, updates, update })
   },
 })

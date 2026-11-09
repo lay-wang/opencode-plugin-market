@@ -48,6 +48,13 @@ export default function MarketPage() {
   const [more, setMore] = createSignal(false)
   const [busy, setBusy] = createSignal<string | null>(null)
   const [error, setError] = createSignal<string | null>(null)
+  const [updates, setUpdates] = createSignal<Array<{ name: string; current: string | null; latest: string | null }>>([])
+  const [updating, setUpdating] = createSignal<string | null>(null)
+
+  // A catalog name and the installed spec can differ by scope or an `opencode-` prefix, so match either way.
+  const updateFor = (name: string) =>
+    updates().find((item) => item.name === name || item.name.endsWith(name) || name.endsWith(item.name))
+  const pending = () => updates().filter((item) => item.latest && item.current && item.latest !== item.current)
 
   const filters = () => ({ category: category(), health: health(), opencode: opencode(), days: days(), minStars: minStars() })
   const active = () => Object.values(filters()).filter((value) => value !== null).length + (installedOnly() ? 1 : 0)
@@ -73,7 +80,39 @@ export default function MarketPage() {
     }
   }
 
-  onMount(() => void load())
+  const refreshUpdates = async () => {
+    try {
+      const next = await ctx.client.rpc(Market).updates({})
+      if (!ctx.signal.aborted) setUpdates(next.items as Array<{ name: string; current: string | null; latest: string | null }>)
+    } catch {}
+  }
+
+  onMount(() => {
+    void load()
+    void refreshUpdates()
+  })
+
+  const updateOne = async (name: string) => {
+    setUpdating(name)
+    try {
+      const result = await ctx.client.rpc(Market).update({ name })
+      setError(result.ok ? null : (result.error ?? ctx.t("failed")))
+      await refreshUpdates()
+      await load()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  // One at a time: every update rewrites the same config file. A failure stops the run instead of piling on.
+  const updateAll = async () => {
+    for (const item of pending()) {
+      await updateOne(item.name)
+      if (error()) return
+    }
+  }
 
   const clear = () => {
     setCategory(null)
@@ -126,6 +165,7 @@ export default function MarketPage() {
         : await ctx.client.rpc(Market).uninstall({ name: entry.name })
       setError(result.ok ? null : (result.error ?? ctx.t("failed")))
       await load()
+      await refreshUpdates()
     } catch (e) {
       setError(String(e))
     } finally {
@@ -255,7 +295,7 @@ export default function MarketPage() {
           {ctx.t("installedOnly")}
         </ctx.ui.Button>
         <ctx.ui.Tooltip value={ctx.t("refresh")}>
-          <ctx.ui.IconButton icon="outline-rotate-clockwise" label={ctx.t("refresh")} onClick={() => void load()} />
+          <ctx.ui.IconButton icon="outline-rotate-clockwise" label={ctx.t("refresh")} onClick={() => { void load(); void refreshUpdates() }} />
         </ctx.ui.Tooltip>
       </div>
 
@@ -276,6 +316,33 @@ export default function MarketPage() {
         {(message) => <div style={{ color: "var(--color-danger, #d33)", "font-size": "13px", margin: "8px 0" }}>{message()}</div>}
       </Show>
 
+      <Show when={pending().length > 0}>
+        <div
+          style={{
+            display: "flex",
+            "align-items": "center",
+            gap: "8px",
+            padding: "8px 10px",
+            "margin-bottom": "8px",
+            "border-radius": "6px",
+            background: "color-mix(in srgb, #d9a13b 12%, transparent)",
+          }}
+        >
+          <span style={{ width: "7px", height: "7px", "border-radius": "50%", background: "#d9a13b", "flex-shrink": 0 }} />
+          <span style={{ "font-size": "13px", flex: 1 }}>
+            {ctx.t("updatesN").replace("{n}", String(pending().length))}
+            <span style={{ opacity: 0.6, "margin-left": "6px" }}>
+              {pending()
+                .map((item) => `${item.current} → ${item.latest}`)
+                .join(", ")}
+            </span>
+          </span>
+          <ctx.ui.Button size="small" variant="contrast" busy={updating() !== null} onClick={() => void updateAll()}>
+            {ctx.t("updateAll")}
+          </ctx.ui.Button>
+        </div>
+      </Show>
+
       <Show when={!loading()} fallback={<ctx.ui.Loader />}>
         <For each={rows()}>
           {(entry) => (
@@ -289,7 +356,24 @@ export default function MarketPage() {
             >
               <div style={{ flex: 1, "min-width": 0 }}>
                 <div style={{ display: "flex", "align-items": "baseline", gap: "8px", "flex-wrap": "wrap" }}>
-                  <span style={{ "font-weight": 500 }}>{entry.title}</span>
+                  <a
+                    href={`https://www.opendock.net/zh/plugins/${entry.name}/`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      ctx.system.openExternal(`https://www.opendock.net/zh/plugins/${entry.name}/`)
+                    }}
+                    style={{ color: "inherit", "text-decoration": "none", "font-weight": 500, cursor: "pointer" }}
+                    title={ctx.t("openPage")}
+                  >
+                    {entry.title}
+                  </a>
+                  <Show when={updateFor(entry.name)}>
+                    <span style={{ "font-size": "11px", padding: "0 5px", "border-radius": "4px", background: "color-mix(in srgb, #d9a13b 18%, transparent)" }}>
+                      {updateFor(entry.name)!.current} → {updateFor(entry.name)!.latest}
+                    </span>
+                  </Show>
                   <Show when={entry.opencode && entry.opencode !== "v2" && entry.opencode !== "both"}>
                     <span style={{ "font-size": "11px", padding: "0 5px", "border-radius": "4px", background: "color-mix(in srgb, #d33 15%, transparent)" }}>
                       {entry.opencode}
@@ -307,14 +391,26 @@ export default function MarketPage() {
                   {categories().find((item) => item.id === entry.category)?.label ?? entry.category}
                 </div>
               </div>
-              <ctx.ui.Button
-                size="small"
-                variant={entry.installed ? "neutral" : "contrast"}
-                busy={busy() === entry.name}
-                onClick={() => pick(entry)}
-              >
-                {entry.installed ? ctx.t("uninstall") : ctx.t("install")}
-              </ctx.ui.Button>
+              <div style={{ display: "flex", gap: "6px", "align-items": "center", "flex-shrink": 0 }}>
+                <Show when={updateFor(entry.name) && updateFor(entry.name)!.latest !== updateFor(entry.name)!.current}>
+                  <ctx.ui.Button
+                    size="small"
+                    variant="contrast"
+                    busy={updating() === updateFor(entry.name)!.name}
+                    onClick={() => void updateOne(updateFor(entry.name)!.name)}
+                  >
+                    {ctx.t("update")}
+                  </ctx.ui.Button>
+                </Show>
+                <ctx.ui.Button
+                  size="small"
+                  variant={entry.installed ? "neutral" : "contrast"}
+                  busy={busy() === entry.name}
+                  onClick={() => pick(entry)}
+                >
+                  {entry.installed ? ctx.t("uninstall") : ctx.t("install")}
+                </ctx.ui.Button>
+              </div>
             </div>
           )}
         </For>

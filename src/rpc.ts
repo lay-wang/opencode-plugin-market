@@ -35,6 +35,13 @@ const Name = {
   additionalProperties: false,
 } as const
 
+const Installed = {
+  type: "object",
+  properties: { name: { type: "string" }, current: nullable("string"), latest: nullable("string") },
+  required: ["name", "current", "latest"],
+  additionalProperties: false,
+} as const
+
 export const Market = Rpc.define({
   id: "plugin-market",
   methods: {
@@ -108,6 +115,16 @@ export const Market = Rpc.define({
     },
     install: { input: Name, output: Result },
     uninstall: { input: Name, output: Result },
+    updates: {
+      input: { type: "object", properties: {}, required: [], additionalProperties: false },
+      output: {
+        type: "object",
+        properties: { items: { type: "array", items: Installed } },
+        required: ["items"],
+        additionalProperties: false,
+      },
+    },
+    update: { input: Name, output: Result },
   },
   events: {},
 })

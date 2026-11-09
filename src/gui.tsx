@@ -1,4 +1,4 @@
-import { Plugin, SettingsPage, usePlugin } from "@opencode/plugin/gui"
+import { Command, Plugin, SettingsPage, usePlugin } from "@opencode/plugin/gui"
 import MarketPage from "./market"
 
 export default Plugin.define({
@@ -39,6 +39,12 @@ export default Plugin.define({
       confirmBody:
         "Plugins run their own code inside this app's server, with the same access you have. Nothing here is reviewed. Only install from sources you trust.",
       confirmOk: "I understand, install",
+      command: "Open the plugin market",
+      update: "Update",
+      updateAll: "Update all",
+      updatesN: "{n} updates available",
+      upToDate: "up to date",
+      openPage: "Open on OpenDock",
     },
     zh: {
       title: "插件市场",
@@ -75,6 +81,12 @@ export default Plugin.define({
       confirmTitle: "确认安装这个插件？",
       confirmBody: "插件会在这个应用的服务器里运行它自己的代码，权限和你本人一样。这里的插件没有任何审核，请只装你信任的来源。",
       confirmOk: "我已了解，安装",
+      command: "打开插件市场",
+      update: "更新",
+      updateAll: "全部更新",
+      updatesN: "{n} 个插件可更新",
+      upToDate: "已是最新",
+      openPage: "在 OpenDock 打开",
     },
   },
   setup(ctx) {
@@ -82,8 +94,22 @@ export default Plugin.define({
       id: "plugin-market",
       title: ctx.t("title"),
       icon: "extensions",
+      // Sits at the bottom of Settings, in the group with About.
+      group: "about",
       entries: [{ id: "plugin-market", title: ctx.t("title"), description: ctx.t("searchHint") }],
       render: () => <MarketPage />,
+    })
+    // A shortcut of the user's choosing: Settings › Shortcuts lists it, and ⌘K finds it.
+    ctx.add(Command, {
+      id: "open",
+      get title() {
+        return ctx.t("title")
+      },
+      description: ctx.t("command"),
+      keywords: "market plugin 市场 插件 安装 install",
+      section: "navigation",
+      bind: "mod+shift+m",
+      run: () => ctx.layout.settings("plugin-market"),
     })
   },
 })
