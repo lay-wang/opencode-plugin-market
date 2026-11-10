@@ -51,10 +51,29 @@ export default function MarketPage() {
   const [updates, setUpdates] = createSignal<Array<{ name: string; current: string | null; latest: string | null }>>([])
   const [updating, setUpdating] = createSignal<string | null>(null)
 
-  // A catalog name and the installed spec can differ by scope or an `opencode-` prefix, so match either way.
+  // A catalog name and the installed spec can differ by an `opencode-` prefix, but never by scope: two packages
+  // under different scopes are unrelated. Exact match first, then the prefix-insensitive one.
+  const scopeOf = (name: string) => (name.startsWith("@") ? name.split("/")[0] : "")
+  const core = (name: string) => name.replace(/^@[^/]+\//, "").replace(/^opencode-/, "")
   const updateFor = (name: string) =>
-    updates().find((item) => item.name === name || item.name.endsWith(name) || name.endsWith(item.name))
-  const pending = () => updates().filter((item) => item.latest && item.current && item.latest !== item.current)
+    updates().find((item) => item.name === name || (scopeOf(item.name) === scopeOf(name) && core(item.name) === core(name)))
+  // Only a version that is actually ahead counts; "5.3.3 → 5.3.3" and a local build ahead of npm are both noise.
+  const parts = (version: string) => version.split(/[.+-]/).map((part) => (/^\d+$/.test(part) ? Number(part) : 0))
+  const newer = (latest: string, current: string) => {
+    const a = parts(latest)
+    const b = parts(current)
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      const delta = (a[i] ?? 0) - (b[i] ?? 0)
+      if (delta !== 0) return delta > 0
+    }
+    return false
+  }
+  const pendingFor = (name: string) => {
+    const item = updateFor(name)
+    return item && item.current && item.latest && newer(item.latest, item.current) ? item : undefined
+  }
+  const pending = () =>
+    updates().filter((item) => item.latest && item.current && newer(item.latest, item.current))
 
   const filters = () => ({ category: category(), health: health(), opencode: opencode(), days: days(), minStars: minStars() })
   const active = () => Object.values(filters()).filter((value) => value !== null).length + (installedOnly() ? 1 : 0)
@@ -383,10 +402,12 @@ export default function MarketPage() {
                   >
                     {entry.title}
                   </a>
-                  <Show when={updateFor(entry.name)}>
-                    <span style={{ "font-size": "11px", padding: "0 5px", "border-radius": "4px", background: "color-mix(in srgb, #d9a13b 18%, transparent)" }}>
-                      {updateFor(entry.name)!.current} → {updateFor(entry.name)!.latest}
-                    </span>
+                  <Show when={pendingFor(entry.name)}>
+                    {(item) => (
+                      <span style={{ "font-size": "11px", padding: "0 5px", "border-radius": "4px", background: "color-mix(in srgb, #d9a13b 18%, transparent)" }}>
+                        {item().current} → {item().latest}
+                      </span>
+                    )}
                   </Show>
                   <Show when={entry.opencode && entry.opencode !== "v2" && entry.opencode !== "both"}>
                     <span style={{ "font-size": "11px", padding: "0 5px", "border-radius": "4px", background: "color-mix(in srgb, #d33 15%, transparent)" }}>
@@ -406,15 +427,17 @@ export default function MarketPage() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: "6px", "align-items": "center", "flex-shrink": 0 }}>
-                <Show when={updateFor(entry.name) && updateFor(entry.name)!.latest !== updateFor(entry.name)!.current}>
-                  <ctx.ui.Button
-                    size="small"
-                    variant="contrast"
-                    busy={updating() === updateFor(entry.name)!.name}
-                    onClick={() => void updateOne(updateFor(entry.name)!.name)}
-                  >
-                    {ctx.t("update")}
-                  </ctx.ui.Button>
+                <Show when={pendingFor(entry.name)}>
+                  {(item) => (
+                    <ctx.ui.Button
+                      size="small"
+                      variant="contrast"
+                      busy={updating() === item().name}
+                      onClick={() => void updateOne(item().name)}
+                    >
+                      {ctx.t("update")}
+                    </ctx.ui.Button>
+                  )}
                 </Show>
                 <ctx.ui.Button
                   size="small"

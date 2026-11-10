@@ -279,7 +279,14 @@ export default Plugin.define({
     const market = async (filter: Filter) => {
       const { at, items } = await readCatalog()
       const installed = new Set((await specs()).filter((spec) => !spec.startsWith("-")).map(bareSpec))
-      const isInstalled = (entry: Entry) => [...installed].some((spec) => spec === entry.name || spec.endsWith(entry.name))
+      // Same scope and same name after dropping an `opencode-` prefix: `@cortexkit/opencode-magic-context` is
+      // catalogued as `@cortexkit/magic-context`. A different scope is a different package, never a match.
+      const scopeOf = (name: string) => (name.startsWith("@") ? name.split("/")[0] : "")
+      const core = (name: string) => name.replace(/^@[^/]+\//, "").replace(/^opencode-/, "")
+      const isInstalled = (entry: Entry) =>
+        [...installed].some(
+          (spec) => spec === entry.name || (scopeOf(spec) === scopeOf(entry.name) && core(spec) === core(entry.name)),
+        )
       const rows = items
         .filter((entry) => matches(entry, filter))
         .filter((entry) => !filter.installed || isInstalled(entry))
