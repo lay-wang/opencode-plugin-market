@@ -13,6 +13,7 @@ type Entry = {
   opencode: string | null
   health: string
   pushedAt: number
+  keywords: string
   installed: boolean
 }
 

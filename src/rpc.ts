@@ -15,9 +15,10 @@ const Entry = {
     opencode: nullable("string"),
     health: { type: "string" },
     pushedAt: { type: "number" },
+    keywords: { type: "string" },
     installed: { type: "boolean" },
   },
-  required: ["name", "title", "description", "stars", "downloads", "score", "category", "opencode", "health", "pushedAt", "installed"],
+  required: ["name", "title", "description", "stars", "downloads", "score", "category", "opencode", "health", "pushedAt", "keywords", "installed"],
   additionalProperties: false,
 } as const
 

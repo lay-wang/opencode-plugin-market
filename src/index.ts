@@ -9,7 +9,7 @@ const SELF = "plugin-market"
 const SOURCE = "https://www.opendock.net/zh/plugins-index.json"
 const CACHE_MS = 12 * 60 * 60 * 1000
 // Bump when the shape of a cached entry changes, so an old cache is refetched instead of read.
-const CACHE_V = 2
+const CACHE_V = 3
 
 const configDir = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "opencode")
 const cachePath = join(configDir, SELF, ".catalog.json")
@@ -25,6 +25,7 @@ type Entry = {
   opencode: string | null
   health: string
   pushedAt: number
+  keywords: string
 }
 
 type Filter = {
@@ -158,6 +159,7 @@ async function readCatalog(): Promise<{ at: number; items: Entry[] }> {
     opencode: (entry.opencode as string | null) ?? null,
     health: String(entry.healthLevel ?? ""),
     pushedAt: Date.parse(String(entry.pushedAt ?? "")) || 0,
+    keywords: Array.isArray(entry.keywords) ? entry.keywords.join(" ").toLowerCase() : "",
   }))
   const next = { v: CACHE_V, at: Date.now(), items }
   await fs.mkdir(join(configDir, SELF), { recursive: true })
@@ -177,11 +179,14 @@ const matches = (entry: Entry, filter: Filter) => {
   if (filter.days && entry.pushedAt < today() - filter.days * 86_400_000) return false
   if (filter.minStars && entry.stars < filter.minStars) return false
   const query = filter.query.trim().toLowerCase()
+  if (!query) return true
+  const label = (CATEGORY_LABELS[entry.category] ?? entry.category).toLowerCase()
   return (
-    !query ||
     entry.name.toLowerCase().includes(query) ||
     entry.title.toLowerCase().includes(query) ||
-    entry.description.toLowerCase().includes(query)
+    entry.description.toLowerCase().includes(query) ||
+    entry.keywords.includes(query) ||
+    label.includes(query)
   )
 }
 
