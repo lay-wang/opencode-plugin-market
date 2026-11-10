@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin"
 import { Market } from "./rpc.js"
+import { localSpec, samePackage } from "./logic.js"
 import fs from "node:fs/promises"
 import { spawn } from "node:child_process"
 import { homedir } from "node:os"
@@ -114,10 +115,6 @@ function pluginsOf(src: string): unknown[] {
 
 const bareSpec = (spec: string) => spec.replace(/@[^@/]*$/, "")
 
-/** A package that lives on disk, not on npm: there is no version to compare. */
-const localSpec = (spec: string) =>
-  spec.startsWith("/") || spec.startsWith(".") || spec.startsWith("~") || spec.startsWith("file:") || spec.startsWith("git")
-
 /* ---------- npm versions ---------- */
 
 const latestCache = new Map<string, { at: number; version: string | null }>()
@@ -128,7 +125,7 @@ async function npmLatest(name: string): Promise<string | null> {
   if (hit && Date.now() - hit.at < LATEST_MS) return hit.version
   let version: string | null = null
   try {
-    const res = await fetch(`https://registry.npmjs.org/${name.replace("/", "%2F")}/latest`)
+    const res = await fetch(`https://registry.npmjs.org/${name.replace("/", "%2F")}/latest`, { signal: AbortSignal.timeout(5000) })
     if (res.ok) {
       const body = (await res.json()) as { version?: unknown }
       if (typeof body.version === "string") version = body.version
@@ -281,17 +278,22 @@ export default Plugin.define({
       }
     }
 
+    /** Waits for the runtime to report a version other than `before`, so a reload in flight is not read as a failure. */
+    const waitVersion = async (spec: string, before: string | null, timeout: number) => {
+      const deadline = Date.now() + timeout
+      let current = before
+      while (Date.now() < deadline) {
+        current = (find(await list(), spec)?.source.version as string | undefined) ?? current
+        if (!before || current !== before) break
+        await new Promise((resolve) => setTimeout(resolve, 400))
+      }
+      return current
+    }
+
     const market = async (filter: Filter) => {
       const { at, items } = await readCatalog()
       const installed = new Set((await specs()).filter((spec) => !spec.startsWith("-")).map(bareSpec))
-      // Same scope and same name after dropping an `opencode-` prefix: `@cortexkit/opencode-magic-context` is
-      // catalogued as `@cortexkit/magic-context`. A different scope is a different package, never a match.
-      const scopeOf = (name: string) => (name.startsWith("@") ? name.split("/")[0] : "")
-      const core = (name: string) => name.replace(/^@[^/]+\//, "").replace(/^opencode-/, "")
-      const isInstalled = (entry: Entry) =>
-        [...installed].some(
-          (spec) => spec === entry.name || (scopeOf(spec) === scopeOf(entry.name) && core(spec) === core(entry.name)),
-        )
+      const isInstalled = (entry: Entry) => [...installed].some((spec) => samePackage(spec, entry.name))
       const rows = items
         .filter((entry) => matches(entry, filter))
         .filter((entry) => !filter.installed || isInstalled(entry))
@@ -352,7 +354,7 @@ export default Plugin.define({
     const uninstall = async (input: { name: string }) => {
       try {
         const spec = (await specs()).find(
-          (candidate) => !candidate.startsWith("-") && (bareSpec(candidate) === input.name || bareSpec(candidate).endsWith(input.name)),
+          (candidate) => !candidate.startsWith("-") && samePackage(bareSpec(candidate), input.name),
         )
         if (!spec) throw new Error("配置里没有这个插件")
         await runCli(["plugin", "remove", spec])
@@ -367,14 +369,15 @@ export default Plugin.define({
     const updates = async () => {
       const specsInstalled = (await specs()).filter((spec) => !spec.startsWith("-"))
       const runtime = await list()
-      const items: Array<{ name: string; current: string | null; latest: string | null }> = []
-      for (const spec of specsInstalled) {
-        const name = bareSpec(spec)
-        if (!name || localSpec(name)) continue
-        const loaded = find(runtime, spec)
-        const current = (loaded?.source.version as string | undefined) ?? null
-        items.push({ name, current, latest: await npmLatest(name) })
-      }
+      const items = await Promise.all(
+        specsInstalled
+          .map((spec) => ({ spec, name: bareSpec(spec) }))
+          .filter(({ name }) => name && !localSpec(name))
+          .map(async ({ spec, name }) => {
+            const current = (find(runtime, spec)?.source.version as string | undefined) ?? null
+            return { name, current, latest: await npmLatest(name) }
+          }),
+      )
       return { items }
     }
 
@@ -382,24 +385,43 @@ export default Plugin.define({
       try {
         if (!/^(@[\w.-]+\/)?[\w.-]+$/.test(input.name)) throw new Error("包名不合法，已放弃更新")
         const spec = (await specs()).find(
-          (candidate) => !candidate.startsWith("-") && (bareSpec(candidate) === input.name || bareSpec(candidate).endsWith(input.name)),
+          (candidate) => !candidate.startsWith("-") && samePackage(bareSpec(candidate), input.name),
         )
         if (!spec) throw new Error("配置里没有这个插件")
         const before = (find(await list(), spec)?.source.version as string | undefined) ?? null
         // `plugin add` on a package that is already configured does nothing; `plugin update` is the one that moves it.
         await runCli(["plugin", "update", spec])
-        await settle(input.name, true, 90_000)
+        const after = await waitVersion(spec, before, 15_000)
         const loaded = find(await list(), input.name)
-        if (!loaded) return { ok: false, error: "更新完成，但服务端没有加载它（可能需要重启）" }
-        if (loaded.state.status !== "active") return { ok: false, error: `已更新，但加载失败：${loaded.state.error ?? "未知原因"}` }
-        const after = (loaded.source.version as string | undefined) ?? null
-        if (before && after && before === after) return { ok: false, error: `版本仍是 ${after}，更新没有生效` }
+        if (loaded && loaded.state.status !== "active") {
+          return { ok: false, error: `已更新，但加载失败：${loaded.state.error ?? "未知原因"}` }
+        }
+        if (before && after === before) return { ok: false, error: `版本仍是 ${after}，更新没有生效` }
         return { ok: true, error: null }
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
     }
 
-    await ctx.rpc.register(Market, { market, install, uninstall, updates, update })
+    // install, uninstall and update all rewrite the same config through the CLI. One at a time, or two writes interleave.
+    let mutating = false
+    const busy = { ok: false, error: "已有安装、卸载或更新正在进行中，请稍等" }
+    const once = <I, R>(run: (input: I) => Promise<R>, idle: R) => async (input: I) => {
+      if (mutating) return idle
+      mutating = true
+      try {
+        return await run(input)
+      } finally {
+        mutating = false
+      }
+    }
+
+    await ctx.rpc.register(Market, {
+      market,
+      updates,
+      install: once(install, busy),
+      uninstall: once(uninstall, busy),
+      update: once(update, busy),
+    })
   },
 })

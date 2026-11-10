@@ -1,6 +1,7 @@
 import { For, Show, createSignal, onMount } from "solid-js"
 import { usePlugin } from "@opencode/plugin/gui"
 import { Market } from "./rpc"
+import { newer, samePackage } from "./logic"
 
 type Entry = {
   name: string
@@ -52,23 +53,8 @@ export default function MarketPage() {
   const [updates, setUpdates] = createSignal<Array<{ name: string; current: string | null; latest: string | null }>>([])
   const [updating, setUpdating] = createSignal<string | null>(null)
 
-  // A catalog name and the installed spec can differ by an `opencode-` prefix, but never by scope: two packages
-  // under different scopes are unrelated. Exact match first, then the prefix-insensitive one.
-  const scopeOf = (name: string) => (name.startsWith("@") ? name.split("/")[0] : "")
-  const core = (name: string) => name.replace(/^@[^/]+\//, "").replace(/^opencode-/, "")
-  const updateFor = (name: string) =>
-    updates().find((item) => item.name === name || (scopeOf(item.name) === scopeOf(name) && core(item.name) === core(name)))
+  const updateFor = (name: string) => updates().find((item) => samePackage(item.name, name))
   // Only a version that is actually ahead counts; "5.3.3 → 5.3.3" and a local build ahead of npm are both noise.
-  const parts = (version: string) => version.split(/[.+-]/).map((part) => (/^\d+$/.test(part) ? Number(part) : 0))
-  const newer = (latest: string, current: string) => {
-    const a = parts(latest)
-    const b = parts(current)
-    for (let i = 0; i < Math.max(a.length, b.length); i++) {
-      const delta = (a[i] ?? 0) - (b[i] ?? 0)
-      if (delta !== 0) return delta > 0
-    }
-    return false
-  }
   const pendingFor = (name: string) => {
     const item = updateFor(name)
     return item && item.current && item.latest && newer(item.latest, item.current) ? item : undefined
@@ -104,7 +90,10 @@ export default function MarketPage() {
     try {
       const next = await ctx.client.rpc(Market).updates({})
       if (!ctx.signal.aborted) setUpdates(next.items as Array<{ name: string; current: string | null; latest: string | null }>)
-    } catch {}
+    } catch (e) {
+      // Silence here reads as "everything is up to date", which is a different fact.
+      if (!ctx.signal.aborted) setError(`${ctx.t("checkFailed")}${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   onMount(() => {

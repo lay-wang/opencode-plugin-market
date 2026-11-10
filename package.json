@@ -59,7 +59,8 @@
   "license": "MIT",
   "scripts": {
     "build": "vite build",
-    "prepack": "vite build"
+    "prepack": "vite build",
+    "test": "node test/logic.test.mjs"
   },
   "dependencies": {
     "@opencode/plugin": "^2.2.1"

@@ -1,4 +1,4 @@
-import { Command, Plugin, SettingsPage, usePlugin } from "@opencode/plugin/gui"
+import { Command, Plugin, SettingsPage } from "@opencode/plugin/gui"
 import MarketPage from "./market"
 
 export default Plugin.define({
@@ -48,6 +48,7 @@ export default Plugin.define({
       shortcut: "Shortcut",
       changeShortcut: "Change",
       shortcutHint: "The shortcut is a host setting; this opens Settings › Shortcuts with the command listed.",
+      checkFailed: "Update check failed: ",
     },
     zh: {
       title: "插件市场",
@@ -93,6 +94,7 @@ export default Plugin.define({
       shortcut: "快捷键",
       changeShortcut: "修改",
       shortcutHint: "快捷键由宿主管理，这里直接跳到设置里的快捷键页面。",
+      checkFailed: "检查更新失败：",
     },
   },
   setup(ctx) {
