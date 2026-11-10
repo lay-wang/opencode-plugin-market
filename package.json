@@ -1,7 +1,7 @@
 {
   "name": "opencode-plugin-market",
-  "version": "0.2.0",
-  "description": "Browse, install and remove OpenCode plugins from inside the desktop app, using the OpenDock catalog.",
+  "version": "0.2.1",
+  "description": "Plugin marketplace for the OpenCode desktop app: search the OpenDock catalog, then install, update and remove plugins without editing config or leaving the app.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -18,7 +18,10 @@
     "opencode",
     "opencode-plugin",
     "plugin-market",
+    "plugin-marketplace",
     "marketplace",
+    "插件市场",
+    "插件管理",
     "opendock"
   ],
   "repository": {
